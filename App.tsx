@@ -61,7 +61,8 @@ export default function App() {
   const [resolution, setResolution] = useState<Resolution>('2K'); 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   
-  // Volcengine Config State
+  // API Keys
+  const [geminiApiKey, setGeminiApiKey] = useState('');
   const [volcConfig, setVolcConfig] = useState<VolcengineConfig>({
     apiKey: '',
     endpointId: ''
@@ -76,6 +77,11 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Load Gemini Key
+    const savedGeminiKey = localStorage.getItem('gemini_api_key');
+    if (savedGeminiKey) setGeminiApiKey(savedGeminiKey);
+
+    // Load Volcengine Config
     const savedConfig = localStorage.getItem('aura_volc_config');
     if (savedConfig) {
       try {
@@ -94,6 +100,11 @@ export default function App() {
       }
     }
   }, []);
+
+  const handleGeminiKeyChange = (val: string) => {
+    setGeminiApiKey(val);
+    localStorage.setItem('gemini_api_key', val);
+  };
 
   const handleVolcConfigChange = (key: keyof VolcengineConfig, value: string) => {
     const newConfig = { ...volcConfig, [key]: value };
@@ -232,7 +243,8 @@ export default function App() {
           seed: -1,
           scale: 7.5
         },
-        viewShiftMode
+        viewShiftMode,
+        geminiApiKey
       );
       setImages(prev => ({ ...prev, generated: result }));
       setStatus({ isLoading: false, error: null, step: 'completed' });
@@ -280,10 +292,31 @@ export default function App() {
         onClose={() => setShowSettings(false)}
         title="系统配置"
       >
-        <div className="space-y-8">
+        <div className="space-y-6">
+           
+           {/* Gemini Settings */}
+           <div className="bg-[#F2F2F7] rounded-xl p-4 border border-black/5 space-y-4">
+              <div className="flex items-center gap-2 text-[#007AFF] mb-2">
+                <Sparkles className="w-4 h-4" />
+                <span className="text-xs font-bold uppercase">Google Gemini 密钥</span>
+              </div>
+              
+              <IOSInput 
+                label="API Key" 
+                value={geminiApiKey}
+                onChange={(e) => handleGeminiKeyChange(e.target.value)}
+                type="password"
+                placeholder="请输入 Gemini API Key"
+              />
+              <div className="text-[10px] text-gray-500 leading-tight">
+                用于驱动 Gemini 图像编辑与视角合成。
+              </div>
+           </div>
+
+           {/* Volcengine Settings */}
            <div className="bg-[#F2F2F7] rounded-xl p-4 border border-black/5 space-y-4">
               <div className="flex items-center gap-2 text-orange-600 mb-2">
-                <AlertCircle className="w-4 h-4" />
+                <Zap className="w-4 h-4" />
                 <span className="text-xs font-bold uppercase">火山引擎 (Seedream) 密钥</span>
               </div>
               
@@ -303,9 +336,10 @@ export default function App() {
                 placeholder="请输入 ep-2025..."
               />
             </div>
+
             {engine === 'GEMINI' && (
-              <div className="p-4 text-sm text-gray-500 bg-gray-50 rounded-xl">
-                 分辨率和画幅比例设置在 Gemini 模式下由模型自动决定。
+              <div className="p-4 text-xs text-gray-500 bg-gray-50 rounded-xl">
+                 提示: Gemini 2.5 Flash / 3 Pro 将自动决定最佳输出分辨率。
               </div>
             )}
         </div>

@@ -1,10 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { EditMode, AiModel, VolcengineConfig, RenderConfig, ViewShiftMode } from "../types";
 
-const getClient = () => {
-  const apiKey = process.env.API_KEY;
+const getClient = (apiKeyOverride?: string) => {
+  // Prioritize user-provided key, then environment variable
+  const apiKey = apiKeyOverride || process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("Gemini API Key is missing. Please configure process.env.API_KEY.");
+    throw new Error("Gemini API Key is missing. Please configure it in Settings.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -108,7 +109,8 @@ export const generateEditedImage = async (
     seed: -1,
     scale: 7.5 
   },
-  viewShiftMode: ViewShiftMode = 'CAMERA'
+  viewShiftMode: ViewShiftMode = 'CAMERA',
+  geminiApiKey?: string
 ): Promise<string> => {
 
   const cleanBase64 = base64Image.split(',')[1] || base64Image;
@@ -160,7 +162,7 @@ export const generateEditedImage = async (
   }
 
   // 2. Gemini Route
-  const ai = getClient();
+  const ai = getClient(geminiApiKey);
   
   const geminiConfig: any = {};
   if (model === 'gemini-3-pro-image-preview') {
@@ -198,8 +200,10 @@ export const generateEditedImage = async (
       }
     }
     throw new Error("AI 生成失败，未返回图片数据。");
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    throw error;
+    let msg = error.message;
+    if (msg.includes('API key not valid')) msg = 'Gemini API Key 无效，请在设置中检查。';
+    throw new Error(msg);
   }
 };

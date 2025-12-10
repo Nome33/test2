@@ -3,41 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    
-    <!-- Branding & SEO -->
     <title>BlueLemonAI.app - Next-Gen AI Studio</title>
-    <meta name="description" content="Professional AI Image Editing & View Synthesis Studio. Experience the future of rendering at BlueLemonAI.app.">
+    <meta name="description" content="Professional AI Rendering Studio">
     
-    <!-- Open Graph / Social Sharing -->
-    <meta property="og:title" content="BlueLemonAI.app">
-    <meta property="og:description" content="Next-Gen AI Rendering Workspace. Powered by Gemini.">
-    <meta property="og:type" content="website">
-    <meta property="og:site_name" content="BlueLemonAI">
-    
-    <!-- iOS Web App Capable (PWA) -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="BlueLemonAI">
-    <meta name="theme-color" content="#f8f9fa">
-    
-    <!-- Dynamic Favicon -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22 fill=%22none%22><path d=%22M50 8 C73.196 8 92 26.804 92 50 C92 73.196 73.196 92 50 92 C32.5 92 17.5 81.5 11 66.5 C9.5 69 5 68 5 62 C5 58 8 26.804 8 50 C8 26.804 26.804 8 50 8Z%22 stroke=%22black%22 stroke-width=%228%22 stroke-linecap=%22round%22/><g stroke=%22black%22 stroke-width=%228%22 stroke-linecap=%22round%22><line x1=%2250%22 y1=%2226%22 x2=%2250%22 y2=%2238%22 /><line x1=%2250%22 y1=%2274%22 x2=%2250%22 y2=%2262%22 /><line x1=%2226%22 y1=%2250%22 x2=%2238%22 y2=%2250%22 /><line x1=%2274%22 y1=%2250%22 x2=%2262%22 y2=%2250%22 /><line x1=%2233%22 y1=%2233%22 x2=%2241%22 y2=%2241%22 /><line x1=%2267%22 y1=%2233%22 x2=%2259%22 y2=%2241%22 /><line x1=%2233%22 y1=%2267%22 x2=%2241%22 y2=%2259%22 /><line x1=%2267%22 y1=%2267%22 x2=%2259%22 y2=%2259%22 /></g></svg>">
-
+    <!-- Styles -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://aistudiocdn.com/react@^19.2.1",
-        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-        "react/": "https://aistudiocdn.com/react@^19.2.1/",
-        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0",
-        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
-        "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.25"
-      }
-    }
-    </script>
     <style>
       body {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -56,26 +28,19 @@
         padding-top: env(safe-area-inset-top);
         padding-bottom: env(safe-area-inset-bottom);
       }
-      
       .glass-panel {
         background: rgba(255, 255, 255, 0.55);
         backdrop-filter: blur(40px) saturate(180%);
         -webkit-backdrop-filter: blur(40px) saturate(180%);
         border: 1px solid rgba(255, 255, 255, 0.6);
-        box-shadow: 
-          0 20px 50px -12px rgba(0, 0, 0, 0.05),
-          0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+        box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
         transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
       }
-      
       .glass-panel:hover {
         background: rgba(255, 255, 255, 0.7);
-        box-shadow: 
-          0 30px 60px -15px rgba(0, 0, 0, 0.08),
-          0 0 0 1px rgba(255, 255, 255, 0.8) inset;
+        box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
         transform: translateY(-2px);
       }
-
       .glass-input {
         background: rgba(255, 255, 255, 0.4);
         backdrop-filter: blur(20px);
@@ -83,27 +48,28 @@
         border: 1px solid rgba(255, 255, 255, 0.5);
         box-shadow: inset 0 2px 4px rgba(0,0,0,0.01);
       }
-      
       .glass-input:focus {
         background: rgba(255, 255, 255, 0.8);
         border-color: rgba(0, 0, 0, 0.1);
         box-shadow: 0 4px 15px rgba(0,0,0,0.04);
       }
-
-      ::-webkit-scrollbar {
-        width: 0px;
-        background: transparent;
-      }
-      
-      .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-      }
-      .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-      }
+      ::-webkit-scrollbar { width: 0px; background: transparent; }
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
-  </head>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+    "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.25"
+  }
+}
+</script>
+</head>
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
