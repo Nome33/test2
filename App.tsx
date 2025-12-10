@@ -24,30 +24,41 @@ import {
   Square,
   History,
   Trash2,
-  ArrowRight
+  ArrowRight,
+  Rotate3D,
+  Loader2,
+  Camera,
+  RotateCw,
+  Edit3
 } from 'lucide-react';
 import { generateEditedImage } from './services/geminiService';
-import { IOSButton, GlassCard, SegmentedControl, NavBar, BottomSheet, IOSInput, IOSSlider } from './components/Components';
-import { EditMode, ProcessingState, ImageState, AiModel, VolcengineConfig, Resolution, AspectRatio, EngineType, HistoryItem } from './types';
+import { IOSButton, GlassCard, SegmentedControl, NavBar, BottomSheet, IOSInput, IOSSlider, CubeController } from './components/Components';
+import { EditMode, ProcessingState, ImageState, AiModel, VolcengineConfig, Resolution, AspectRatio, EngineType, HistoryItem, RotationState, ViewShiftMode } from './types';
+
+// UI Tabs
+type MainTab = 'IMAGE_EDIT' | 'VIEW_SHIFT';
 
 export default function App() {
   const [images, setImages] = useState<ImageState>({ original: null, generated: null });
   const [engine, setEngine] = useState<EngineType>('GEMINI');
   
-  // Gemini State
-  const [geminiMode, setGeminiMode] = useState<EditMode>(EditMode.BACKGROUND);
+  // UI State
+  const [activeTab, setActiveTab] = useState<MainTab>('IMAGE_EDIT');
+  const [subEditMode, setSubEditMode] = useState<EditMode>(EditMode.BACKGROUND);
+
   const [geminiModel, setGeminiModel] = useState<AiModel>('gemini-2.5-flash-image');
   
-  // Seedream State (Simplified)
-  // Fidelity/Scale/Seed removed from UI, keeping defaults internally or simplified
-  
+  // Cube Rotation State
+  const [rotation, setRotation] = useState<RotationState>({ x: -15, y: 30 });
+  const [viewShiftMode, setViewShiftMode] = useState<ViewShiftMode>('CAMERA');
+
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [prompt, setPrompt] = useState('');
   
   // Global Config
-  const [resolution, setResolution] = useState<Resolution>('2K'); // Default to 2K for better quality
+  const [resolution, setResolution] = useState<Resolution>('2K'); 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   
   // Volcengine Config State
@@ -65,7 +76,6 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Load Config
     const savedConfig = localStorage.getItem('aura_volc_config');
     if (savedConfig) {
       try {
@@ -75,7 +85,6 @@ export default function App() {
       }
     }
 
-    // Load History
     const savedHistory = localStorage.getItem('aura_history');
     if (savedHistory) {
       try {
@@ -92,7 +101,7 @@ export default function App() {
     localStorage.setItem('aura_volc_config', JSON.stringify(newConfig));
   };
 
-  const addToHistory = (generatedImg: string) => {
+  const addToHistory = (generatedImg: string, usedPrompt: string) => {
     if (!images.original) return;
     
     const newItem: HistoryItem = {
@@ -100,21 +109,18 @@ export default function App() {
       timestamp: Date.now(),
       original: images.original,
       generated: generatedImg,
-      prompt: prompt,
+      prompt: usedPrompt,
       engine: engine,
       resolution: resolution,
       aspectRatio: aspectRatio
     };
 
     setHistory(prev => {
-      // Keep max 10 items to prevent localStorage overflow
       const updated = [newItem, ...prev].slice(0, 10);
       try {
         localStorage.setItem('aura_history', JSON.stringify(updated));
       } catch (e) {
-        // If quota exceeded, try saving just the new one or handle error
-        console.warn("Storage quota exceeded for history");
-        return [newItem]; // Emergency fallback
+        return [newItem]; 
       }
       return updated;
     });
@@ -155,20 +161,68 @@ export default function App() {
     }
   };
 
+  const getAngleDescription = (rot: RotationState, lang: 'en' | 'zh' = 'en'): string => {
+    const normX = ((rot.x % 360) + 540) % 360 - 180;
+    const normY = ((rot.y % 360) + 540) % 360 - 180;
+
+    if (lang === 'zh') {
+        let vDesc = "平视";
+        if (normX < -20) vDesc = "仰视 (从下往上)";
+        else if (normX > 20) vDesc = "俯视 (从上往下)";
+
+        let hDesc = "正面";
+        if (normY > 20 && normY < 160) hDesc = "右侧面";
+        else if (normY < -20 && normY > -160) hDesc = "左侧面";
+        else if (Math.abs(normY) >= 160) hDesc = "背面";
+        
+        return `${vDesc}, ${hDesc} (X:${Math.round(normX)}°, Y:${Math.round(normY)}°)`;
+    }
+
+    let vDesc = "Eye level";
+    if (normX < -20) vDesc = "Worm's eye view (looking up)";
+    else if (normX > 20) vDesc = "High angle view (looking down)";
+
+    let hDesc = "Front view";
+    if (normY > 20 && normY < 160) hDesc = "Right profile";
+    else if (normY < -20 && normY > -160) hDesc = "Left profile";
+    else if (Math.abs(normY) >= 160) hDesc = "Back view";
+
+    return `${vDesc}, ${hDesc} (X:${Math.round(normX)}°, Y:${Math.round(normY)}°)`;
+  };
+
   const handleGenerate = async () => {
-    if (!images.original || !prompt) return;
+    if (!images.original) return;
+
+    let finalPrompt = prompt;
+    
+    // Determine internal mode
+    const internalMode = activeTab === 'VIEW_SHIFT' ? EditMode.VIEW_SHIFT : subEditMode;
+
+    // View Shift Logic
+    if (internalMode === EditMode.VIEW_SHIFT) {
+      const lang = engine === 'SEEDREAM' ? 'zh' : 'en';
+      const angleDesc = getAngleDescription(rotation, lang);
+      
+      if (lang === 'zh') {
+         const prefix = viewShiftMode === 'CAMERA' ? '摄像机角度: ' : '主体朝向: ';
+         finalPrompt = prompt ? `${prompt}。${prefix}${angleDesc}` : `${prefix}${angleDesc}`;
+      } else {
+         const prefix = viewShiftMode === 'CAMERA' ? 'Camera Angle: ' : 'Subject Pose: ';
+         finalPrompt = prompt ? `${prompt}. ${prefix}${angleDesc}` : `${prefix}${angleDesc}`;
+      }
+    }
+
+    if (!finalPrompt && internalMode !== EditMode.VIEW_SHIFT) return; 
 
     setStatus({ isLoading: true, error: null, step: 'processing' });
     
-    // Hardcoded defaults for Seedream since UI controls were removed
-    // High fidelity/consistency default
-    const calculatedStrength = 0.35; // Previously derived from fidelity
+    const calculatedStrength = engine === 'SEEDREAM' ? 0.75 : 0.65; 
 
     try {
       const result = await generateEditedImage(
         images.original, 
-        prompt, 
-        geminiMode, 
+        finalPrompt, 
+        internalMode, 
         engine === 'GEMINI' ? geminiModel : 'external-seedream',
         volcConfig,
         { 
@@ -177,11 +231,12 @@ export default function App() {
           strength: calculatedStrength,
           seed: -1,
           scale: 7.5
-        }
+        },
+        viewShiftMode
       );
       setImages(prev => ({ ...prev, generated: result }));
       setStatus({ isLoading: false, error: null, step: 'completed' });
-      addToHistory(result);
+      addToHistory(result, finalPrompt);
     } catch (err: any) {
       let errorMessage = err.message || "生成失败，请重试。";
       if (errorMessage.includes("403") || errorMessage.includes("PERMISSION_DENIED")) {
@@ -210,16 +265,8 @@ export default function App() {
     setStatus({ isLoading: false, error: null, step: 'idle' });
   };
 
-  // Gemini Presets
-  const geminiPresets = [
-    { label: "纯净白底", prompt: "Minimalist white studio background, soft diffuse lighting, high end product photography", mode: EditMode.BACKGROUND },
-    { label: "自然日光", prompt: "Outdoor nature sunlight, dappled shadows from trees, fresh aesthetic", mode: EditMode.BACKGROUND },
-    { label: "质感增强", prompt: "Enhance texture and clarity, studio lighting correction, 8k resolution", mode: EditMode.GENERAL },
-  ];
-
-  const applyGeminiPreset = (p: typeof geminiPresets[0]) => {
-    setGeminiMode(p.mode);
-    setPrompt(p.prompt);
+  const resetRotation = () => {
+    setRotation({ x: -15, y: 30 });
   };
 
   return (
@@ -321,286 +368,225 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      {/* Main Content Area - PC Layout */}
+      {/* Main Content Area */}
       <main className="w-full max-w-7xl px-6 lg:px-12 grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 h-[calc(100vh-120px)]">
         
-        {/* Left Column: Canvas/Preview (Shared) */}
+        {/* Left Column: Canvas/Preview */}
         <div className="flex flex-col h-full">
-          {/* Engine Switcher at Top of Canvas */}
           <div className="mb-4 flex justify-center">
              <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-full shadow-sm border border-black/5 inline-flex gap-1">
                 <button
                   onClick={() => setEngine('GEMINI')}
-                  className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
-                    engine === 'GEMINI' 
-                    ? 'bg-[#1D1D1F] text-white shadow-md' 
-                    : 'text-[#86868B] hover:text-[#1D1D1F] hover:bg-black/5'
-                  }`}
+                  className={`px-6 py-2 rounded-full text-sm font-semibold transition-all ${engine === 'GEMINI' ? 'bg-black text-white shadow-md' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
                 >
                   Gemini Studio
                 </button>
                 <button
                   onClick={() => setEngine('SEEDREAM')}
-                  className={`px-6 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2 ${
-                    engine === 'SEEDREAM' 
-                    ? 'bg-orange-500 text-white shadow-md' 
-                    : 'text-[#86868B] hover:text-orange-600 hover:bg-orange-50'
-                  }`}
+                  className={`px-6 py-2 rounded-full text-sm font-semibold transition-all ${engine === 'SEEDREAM' ? 'bg-black text-white shadow-md' : 'text-[#86868B] hover:text-[#1D1D1F]'}`}
                 >
-                  <Palette className="w-4 h-4" />
-                  Seedream Pro
+                  Seedream (Volc)
                 </button>
              </div>
           </div>
 
-          <div className="flex-1 bg-white rounded-[2rem] shadow-sm border border-black/5 overflow-hidden relative flex items-center justify-center group">
-            <AnimatePresence mode="wait">
-              {!images.original ? (
-                <motion.div
-                   key="empty"
-                   initial={{ opacity: 0 }}
-                   animate={{ opacity: 1 }}
-                   exit={{ opacity: 0 }}
-                   className="text-center cursor-pointer"
-                   onClick={() => fileInputRef.current?.click()}
-                >
-                  <div className="w-24 h-24 bg-[#F2F2F7] rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300">
-                    <Upload className="w-8 h-8 text-[#86868B]" />
-                  </div>
-                  <h3 className="text-2xl font-bold text-[#1D1D1F] mb-2">上传人物/产品图</h3>
-                  <p className="text-[#86868B]">点击或拖拽图片到此处</p>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="preview"
-                  className="relative w-full h-full p-8 flex items-center justify-center bg-[#F2F2F7]/50"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                >
-                  <div 
-                    className="relative shadow-2xl rounded-lg overflow-hidden transition-all duration-500 max-h-full max-w-full"
-                    style={{
-                      aspectRatio: aspectRatio.replace(':', '/'),
-                    }}
-                  >
-                     <img 
-                       src={images.generated || images.original} 
-                       className="w-full h-full object-cover"
-                       alt="Preview"
-                     />
-                     {status.isLoading && (
-                        <div className="absolute inset-0 bg-white/60 backdrop-blur-md flex flex-col items-center justify-center">
-                          <div className={`w-12 h-12 border-4 rounded-full animate-spin mb-4 ${engine === 'SEEDREAM' ? 'border-orange-500/20 border-t-orange-500' : 'border-[#007AFF]/20 border-t-[#007AFF]'}`} />
-                          <span className={`text-sm font-semibold ${engine === 'SEEDREAM' ? 'text-orange-600' : 'text-[#007AFF]'}`}>
-                             {engine === 'SEEDREAM' ? 'Seedream 正在渲染...' : 'Gemini 正在计算...'}
-                          </span>
-                        </div>
-                     )}
-                  </div>
-                  
-                  {/* Floating Action Bar */}
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3">
-                     {images.generated && (
-                       <>
-                        <button onClick={() => setImages(prev => ({ ...prev, generated: null }))} className="bg-white/80 backdrop-blur-md px-4 py-2 rounded-full shadow-lg text-sm font-medium hover:bg-white transition-colors flex items-center gap-2">
-                          <RefreshCw className="w-4 h-4" /> 重置
-                        </button>
-                        <button onClick={downloadImage} className={`text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium transition-colors flex items-center gap-2 ${engine === 'SEEDREAM' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-[#007AFF] hover:bg-blue-600'}`}>
-                          <Download className="w-4 h-4" /> 保存
-                        </button>
-                       </>
-                     )}
-                     <button onClick={reset} className="bg-white/80 backdrop-blur-md p-2 rounded-full shadow-lg hover:bg-red-50 text-red-500 transition-colors" title="清除所有">
-                       <X className="w-4 h-4" />
-                     </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* Right Column: Controls - DYNAMIC Based on Engine */}
-        <div className="h-full overflow-y-auto pb-4 scrollbar-hide">
-          <div className="flex flex-col gap-6">
-            
-            {/* Engine Specific Header */}
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F]">
-                {engine === 'GEMINI' ? 'NOR ONE' : 'SEEDREAM'}
-              </h1>
-              <p className="text-[#86868B] font-medium">
-                {engine === 'GEMINI' ? '智能快捷渲染 (Gemini Powered)' : '人物一致性渲染 (Immersity)'}
-              </p>
-            </div>
-
-            {/* --- GEMINI CONTROLS --- */}
-            {engine === 'GEMINI' && (
-              <>
-                <div className="space-y-3">
-                   <label className="text-xs font-bold text-[#86868B] uppercase tracking-wide">模型选择</label>
-                   <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => setGeminiModel('gemini-2.5-flash-image')}
-                        className={`p-3 rounded-xl border text-left transition-all ${geminiModel === 'gemini-2.5-flash-image' ? 'bg-white border-[#007AFF] ring-1 ring-[#007AFF]' : 'border-transparent bg-white/50 hover:bg-white'}`}
-                      >
-                         <div className="font-semibold text-sm">Flash (Nano)</div>
-                         <div className="text-[10px] text-gray-500">快速 • 1K</div>
-                      </button>
-                      <button
-                        onClick={() => setGeminiModel('gemini-3-pro-image-preview')}
-                        className={`p-3 rounded-xl border text-left transition-all ${geminiModel === 'gemini-3-pro-image-preview' ? 'bg-white border-purple-500 ring-1 ring-purple-500' : 'border-transparent bg-white/50 hover:bg-white'}`}
-                      >
-                         <div className="font-semibold text-sm">Pro (Vision)</div>
-                         <div className="text-[10px] text-gray-500">高清 • 4K</div>
-                      </button>
-                   </div>
-                </div>
-
-                <div className="space-y-3">
-                   <label className="text-xs font-bold text-[#86868B] uppercase tracking-wide">编辑模式</label>
-                   <SegmentedControl
-                      value={geminiMode}
-                      onChange={setGeminiMode}
-                      options={[
-                        { label: '场景化', value: EditMode.BACKGROUND, icon: <ImageIcon className="w-4 h-4" /> },
-                        { label: '画质增强', value: EditMode.GENERAL, icon: <Box className="w-4 h-4" /> },
-                        { label: '创意重绘', value: EditMode.CREATIVE, icon: <Palette className="w-4 h-4" /> },
-                      ]}
-                   />
-                </div>
-
-                <div className="bg-white rounded-[1.5rem] p-5 border border-black/5 shadow-sm space-y-4">
-                   <div className="flex justify-between items-center">
-                      <label className="text-xs font-bold text-[#86868B] uppercase tracking-wide">提示词</label>
-                      <span className="text-[10px] text-[#007AFF] font-medium cursor-pointer" onClick={() => setPrompt('')}>清空</span>
-                   </div>
-                   <textarea
-                     value={prompt}
-                     onChange={(e) => setPrompt(e.target.value)}
-                     className="w-full bg-[#F2F2F7] rounded-xl p-3 text-[15px] min-h-[100px] outline-none focus:ring-2 focus:ring-[#007AFF]/20 resize-none"
-                     placeholder="描述你想要的画面..."
-                   />
-                   <div className="flex flex-wrap gap-2">
-                      {geminiPresets.map(p => (
-                        <button key={p.label} onClick={() => applyGeminiPreset(p)} className="px-3 py-1.5 bg-[#F2F2F7] hover:bg-[#E5E5EA] rounded-lg text-xs font-medium text-[#1D1D1F]">
-                          {p.label}
-                        </button>
-                      ))}
-                   </div>
-                </div>
-              </>
-            )}
-
-            {/* --- SEEDREAM CONTROLS --- */}
-            {engine === 'SEEDREAM' && (
-              <div className="space-y-6">
-                
-                {/* Prompting */}
-                <div className="bg-white rounded-[1.5rem] p-5 border border-black/5 shadow-sm space-y-4">
-                   <label className="text-xs font-bold text-[#86868B] uppercase tracking-wide flex items-center gap-2">
-                     <Cpu className="w-3 h-3" /> 画面描述 (Prompt)
-                   </label>
-                   <textarea
-                     value={prompt}
-                     onChange={(e) => setPrompt(e.target.value)}
-                     className="w-full bg-[#F2F2F7] rounded-xl p-3 text-[15px] min-h-[100px] outline-none focus:ring-2 focus:ring-orange-500/20 resize-none font-mono text-sm"
-                     placeholder="例如：站在未来城市的街道上，霓虹灯光..."
-                   />
-                </div>
-
-                {/* Dimensions Control - MOVED HERE */}
-                <div className="bg-white rounded-[1.5rem] p-5 border border-black/5 shadow-sm space-y-6">
-                   <div className="flex items-center gap-2 text-[#1D1D1F] pb-2 border-b border-black/5">
-                      <Scan className="w-4 h-4" />
-                      <span className="text-sm font-bold">画幅与尺寸 (Canvas)</span>
-                   </div>
-
-                   {/* Aspect Ratio */}
-                   <div className="space-y-3">
-                      <label className="text-xs font-bold text-[#86868B] uppercase tracking-wide">比例</label>
-                      <div className="grid grid-cols-5 gap-2">
-                        {[
-                          { val: '1:1', icon: <Square className="w-3 h-3" /> },
-                          { val: '16:9', icon: <Monitor className="w-3 h-3" /> },
-                          { val: '9:16', icon: <Smartphone className="w-3 h-3" /> },
-                          { val: '4:3', icon: <Box className="w-3 h-3" /> },
-                          { val: '3:4', icon: <Box className="w-3 h-3 rotate-90" /> }
-                        ].map((item) => (
-                           <button
-                            key={item.val}
-                            onClick={() => setAspectRatio(item.val as AspectRatio)}
-                            className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl text-[10px] font-semibold transition-all border ${
-                              aspectRatio === item.val 
-                              ? 'bg-[#1D1D1F] border-black text-white shadow-md' 
-                              : 'bg-white border-black/5 text-[#86868B] hover:bg-[#F2F2F7]'
-                            }`}
-                           >
-                             {item.icon}
-                             {item.val}
-                           </button>
-                        ))}
-                      </div>
-                   </div>
-
-                   {/* Resolution */}
-                   <div className="space-y-3">
-                       <label className="text-xs font-bold text-[#86868B] uppercase tracking-wide">清晰度</label>
-                       <div className="grid grid-cols-3 gap-2">
-                         {(['1K', '2K', '4K'] as Resolution[]).map(res => (
-                           <button
-                            key={res}
-                            onClick={() => setResolution(res)}
-                            className={`py-2 rounded-xl text-xs font-bold transition-all border ${
-                              resolution === res 
-                              ? 'bg-orange-500 border-orange-600 text-white shadow-md' 
-                              : 'bg-white border-black/5 text-[#86868B] hover:bg-[#F2F2F7]'
-                            }`}
-                           >
-                             {res}
-                           </button>
-                         ))}
-                       </div>
-                       <p className="text-[10px] text-[#86868B] mt-1">
-                          2K/4K 分辨率会消耗更多时间，但细节更丰富。
-                       </p>
-                   </div>
-                </div>
-
+          <GlassCard className="flex-1 flex items-center justify-center relative overflow-hidden bg-white/50 border-dashed border-2 border-black/5 hover:border-black/10 transition-colors group">
+            {status.isLoading && (
+              <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex flex-col items-center justify-center gap-4">
+                 <Loader2 className="w-10 h-10 animate-spin text-[#007AFF]" />
+                 <p className="text-sm font-medium text-[#86868B]">
+                    {engine === 'GEMINI' ? 'Gemini 正在构思...' : 'Seedream 正在渲染...'}
+                 </p>
               </div>
             )}
+            
+            {!images.original ? (
+              <div className="text-center space-y-4" onClick={() => fileInputRef.current?.click()}>
+                <div className="w-20 h-20 bg-[#F2F2F7] rounded-full flex items-center justify-center mx-auto text-[#86868B] group-hover:scale-110 transition-transform duration-300">
+                  <Upload className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-[#1D1D1F]">上传主体图片</h3>
+                  <p className="text-sm text-[#86868B] mt-1">支持 JPG, PNG • 最大 10MB</p>
+                </div>
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileSelect}/>
+                <IOSButton variant="secondary" className="w-auto px-8 mx-auto mt-4">选择文件</IOSButton>
+              </div>
+            ) : (
+              <div className="relative w-full h-full flex gap-4 p-4">
+                 <div className="flex-1 relative rounded-2xl overflow-hidden bg-[#F2F2F7] shadow-inner">
+                    <img src={images.original} className="w-full h-full object-contain" alt="Original" />
+                    <div className="absolute top-4 left-4 bg-black/50 backdrop-blur text-white text-[10px] font-bold px-2 py-1 rounded">ORIGINAL</div>
+                    <button onClick={reset} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 backdrop-blur p-2 rounded-full text-white transition-colors"><X className="w-4 h-4" /></button>
+                 </div>
+                 {images.generated && (
+                   <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex-1 relative rounded-2xl overflow-hidden bg-[#F2F2F7] shadow-xl border border-white/50">
+                      <img src={images.generated} className="w-full h-full object-contain" alt="Generated" />
+                      <div className="absolute top-4 left-4 bg-[#007AFF] text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg">RENDERED</div>
+                      <button onClick={downloadImage} className="absolute bottom-6 right-6 bg-white text-black p-3 rounded-full shadow-lg hover:scale-110 transition-transform active:scale-95"><Download className="w-5 h-5" /></button>
+                   </motion.div>
+                 )}
+              </div>
+            )}
+          </GlassCard>
+        </div>
 
-            {/* Generate Button - Dynamic Color */}
-            <div className="pt-2">
-              <IOSButton 
-                onClick={handleGenerate} 
-                disabled={!images.original || !prompt || status.isLoading}
-                isLoading={status.isLoading}
-                className={engine === 'SEEDREAM' ? '!bg-orange-500 hover:!bg-orange-600' : ''}
-              >
-                <Wand2 className="w-5 h-5" />
-                {status.isLoading ? '正在生成...' : (engine === 'SEEDREAM' ? '立即生成 (Seedream)' : 'Gemini 渲染')}
-              </IOSButton>
+        {/* Right Column: Unified Controls */}
+        <div className="flex flex-col h-full overflow-y-auto scrollbar-hide pb-10 space-y-6">
+          
+          <GlassCard className="space-y-6">
+            <div className="flex items-center gap-2 mb-2">
+              {engine === 'GEMINI' ? <Sparkles className="w-5 h-5 text-[#007AFF]" /> : <Zap className="w-5 h-5 text-orange-600" />}
+              <h3 className="font-bold text-lg">{engine === 'GEMINI' ? 'Gemini Studio' : 'Seedream Studio'}</h3>
             </div>
 
-            {status.error && (
-               <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100 text-center flex flex-col items-center gap-1">
-                 <AlertCircle className="w-5 h-5 mb-1" />
-                 {status.error}
-                 {engine === 'SEEDREAM' && status.error.includes("Endpoint") && (
-                   <span className="text-xs text-red-400 mt-1">请点击右上角设置图标配置火山引擎 Key</span>
-                 )}
-               </div>
-            )}
+            <SegmentedControl 
+              options={[
+                { label: '图像编辑', value: 'IMAGE_EDIT', icon: <Edit3 className="w-3.5 h-3.5"/> },
+                { label: '视角模拟', value: 'VIEW_SHIFT', icon: <Rotate3D className="w-3.5 h-3.5"/> },
+              ]}
+              value={activeTab}
+              onChange={(val) => { setActiveTab(val as MainTab); setPrompt(''); }}
+            />
 
+            <div className="min-h-[220px]">
+              <AnimatePresence mode="wait">
+                
+                {/* --- IMAGE EDITING TAB --- */}
+                {activeTab === 'IMAGE_EDIT' && (
+                  <motion.div key="edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-5">
+                    
+                    {/* Sub-mode selector as Chips */}
+                    <div className="flex flex-wrap gap-2">
+                       <button 
+                         onClick={() => setSubEditMode(EditMode.BACKGROUND)}
+                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${subEditMode === EditMode.BACKGROUND ? 'bg-black text-white border-black' : 'bg-white text-[#1D1D1F] border-gray-200 hover:bg-gray-50'}`}
+                       >
+                         换背景
+                       </button>
+                       <button 
+                         onClick={() => setSubEditMode(EditMode.GENERAL)}
+                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${subEditMode === EditMode.GENERAL ? 'bg-black text-white border-black' : 'bg-white text-[#1D1D1F] border-gray-200 hover:bg-gray-50'}`}
+                       >
+                         通用修图
+                       </button>
+                       <button 
+                         onClick={() => setSubEditMode(EditMode.CREATIVE)}
+                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${subEditMode === EditMode.CREATIVE ? 'bg-black text-white border-black' : 'bg-white text-[#1D1D1F] border-gray-200 hover:bg-gray-50'}`}
+                       >
+                         创意重绘
+                       </button>
+                    </div>
+
+                    <div className="space-y-3">
+                       {subEditMode === EditMode.BACKGROUND && <p className="text-xs text-[#86868B]">AI 将自动识别主体并替换背景环境，保持主体特征不变。</p>}
+                       {subEditMode === EditMode.GENERAL && <p className="text-xs text-[#86868B]">增强光影质感、清晰度和细节，适合电商精修。</p>}
+                       {subEditMode === EditMode.CREATIVE && <p className="text-xs text-[#86868B]">风格化重绘，适合将草图或普通照片转化为艺术作品。</p>}
+                       
+                       <IOSInput 
+                         label="提示词 (Prompt)" 
+                         value={prompt} 
+                         onChange={(e) => setPrompt(e.target.value)} 
+                         placeholder={
+                            subEditMode === EditMode.BACKGROUND ? "例如: luxury marble table, soft light..." :
+                            subEditMode === EditMode.GENERAL ? "例如: Cinematic lighting, 8k resolution..." : 
+                            "例如: Cyberpunk style, oil painting..."
+                         }
+                         className="min-h-[80px]"
+                       />
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* --- VIEW SHIFT TAB --- */}
+                {activeTab === 'VIEW_SHIFT' && (
+                   <motion.div key="view" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-4">
+                     <div className="bg-[#F2F2F7] rounded-2xl p-4">
+                        <div className="flex justify-between items-center mb-3">
+                          <label className="text-[13px] font-medium text-[#86868B] uppercase tracking-wide">3D 视角模拟</label>
+                        </div>
+                        
+                        {/* Camera vs Subject Toggle */}
+                        <div className="bg-white/50 p-1 rounded-xl flex mb-4">
+                           <button onClick={() => setViewShiftMode('CAMERA')} className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${viewShiftMode === 'CAMERA' ? 'bg-white shadow-sm text-black' : 'text-[#86868B]'}`}>
+                              <Camera className="w-3 h-3" /> 摄像机旋转
+                           </button>
+                           <button onClick={() => setViewShiftMode('SUBJECT')} className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${viewShiftMode === 'SUBJECT' ? 'bg-white shadow-sm text-black' : 'text-[#86868B]'}`}>
+                              <RotateCw className="w-3 h-3" /> 主体旋转
+                           </button>
+                        </div>
+
+                        <CubeController 
+                          rotation={rotation} 
+                          onChange={setRotation} 
+                          onReset={resetRotation}
+                        />
+                        <div className="mt-3 text-center">
+                          <span className="text-xs font-mono text-[#86868B] bg-white/50 px-2 py-1 rounded">
+                            {engine === 'SEEDREAM' ? (viewShiftMode === 'CAMERA' ? '摄像机位置: ' : '主体朝向: ') : (viewShiftMode === 'CAMERA' ? 'Camera: ' : 'Subject: ')}
+                            {getAngleDescription(rotation, engine === 'SEEDREAM' ? 'zh' : 'en')}
+                          </span>
+                        </div>
+                     </div>
+                     <IOSInput label="附加细节 (可选)" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="例如: show back details..." />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </GlassCard>
+
+          {/* Engine Specific Settings */}
+          {engine === 'SEEDREAM' && (
+            <GlassCard>
+               <div className="space-y-4">
+                 <div className="flex items-center justify-between">
+                    <span className="text-[13px] font-medium text-[#86868B] uppercase">画幅比例</span>
+                 </div>
+                 <div className="grid grid-cols-5 gap-2">
+                   {(['1:1', '16:9', '9:16', '4:3', '3:4'] as AspectRatio[]).map(ratio => (
+                     <button key={ratio} onClick={() => setAspectRatio(ratio)} className={`py-2 rounded-lg text-xs font-semibold transition-all ${aspectRatio === ratio ? 'bg-orange-500 text-white shadow-md' : 'bg-[#F2F2F7] text-[#1D1D1F] hover:bg-[#E5E5EA]'}`}>
+                       {ratio}
+                     </button>
+                   ))}
+                 </div>
+              </div>
+            </GlassCard>
+          )}
+
+          {/* Resolution */}
+          <GlassCard>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-[13px] font-medium text-[#86868B] uppercase">输出分辨率</span>
+              {engine === 'GEMINI' && <span className="text-xs text-[#007AFF] font-medium bg-blue-50 px-2 py-0.5 rounded">Pro Only</span>}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(['1K', '2K', '4K'] as Resolution[]).map(res => (
+                <button key={res} onClick={() => setResolution(res)} className={`py-2 rounded-xl text-sm font-semibold transition-all ${resolution === res ? 'bg-black text-white shadow-lg' : 'bg-[#F2F2F7] text-[#1D1D1F] hover:bg-[#E5E5EA]'}`}>
+                  {res}
+                </button>
+              ))}
+            </div>
+          </GlassCard>
+
+          {/* Action Button */}
+          <div className="pt-2">
+             <IOSButton 
+               onClick={handleGenerate} 
+               isLoading={status.isLoading}
+               disabled={!images.original || status.isLoading}
+               className="bg-gradient-to-r from-[#000000] to-[#333333] shadow-xl shadow-black/20"
+             >
+               {status.isLoading ? '正在渲染...' : `使用 ${engine === 'GEMINI' ? 'Gemini' : 'Seedream'} 生成`}
+             </IOSButton>
+             
+             {status.error && (
+               <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl flex items-center gap-2 border border-red-100">
+                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                 {status.error}
+               </motion.div>
+             )}
           </div>
+
         </div>
       </main>
     </div>

@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { EditMode, AiModel, VolcengineConfig, RenderConfig } from "../types";
+import { EditMode, AiModel, VolcengineConfig, RenderConfig, ViewShiftMode } from "../types";
 
 const getClient = () => {
   const apiKey = process.env.API_KEY;
@@ -10,48 +10,22 @@ const getClient = () => {
 };
 
 // Helper to calculate dimensions for Seedream/Volcengine
-// User confirmed model has no strict lower pixel limit, so we allow standard 16:9 resolutions.
 const getVolcengineDimensions = (aspectRatio: string, resolution: string): { width: number, height: number } => {
-  // Define standard pixel dimensions for common ratios
-  // Ensuring multiples of 16 or 64 for best model compatibility
-  
-  // Base long side size based on Resolution preset
   let longSide = 1024;
-  if (resolution === '2K') longSide = 2048; // e.g., 2048x1152 for 16:9
-  if (resolution === '4K') longSide = 3840; // e.g., 3840x2160 for 16:9
+  if (resolution === '2K') longSide = 2048; 
+  if (resolution === '4K') longSide = 3840;
 
-  // Calculate short side based on ratio
   let w = longSide;
   let h = longSide;
 
   switch (aspectRatio) {
-    case '16:9':
-      // Landscape
-      w = longSide;
-      h = Math.round(longSide * 9 / 16);
-      break;
-    case '9:16':
-      // Portrait
-      w = Math.round(longSide * 9 / 16);
-      h = longSide;
-      break;
-    case '4:3':
-      w = longSide;
-      h = Math.round(longSide * 3 / 4);
-      break;
-    case '3:4':
-      w = Math.round(longSide * 3 / 4);
-      h = longSide;
-      break;
-    case '1:1':
-    default:
-      w = longSide;
-      h = longSide;
-      break;
+    case '16:9': w = longSide; h = Math.round(longSide * 9 / 16); break;
+    case '9:16': w = Math.round(longSide * 9 / 16); h = longSide; break;
+    case '4:3': w = longSide; h = Math.round(longSide * 3 / 4); break;
+    case '3:4': w = Math.round(longSide * 3 / 4); h = longSide; break;
+    case '1:1': default: w = longSide; h = longSide; break;
   }
 
-  // Ensure even numbers (divisible by 8 is usually safe for most modern models)
-  // Rounding to nearest 8
   w = Math.round(w / 8) * 8;
   h = Math.round(h / 8) * 8;
 
@@ -69,34 +43,22 @@ const generateVolcengineImage = async (
   }
 
   const endpoint = 'https://ark.cn-beijing.volces.com/api/v3/images/generations';
-  
-  // Use strictly calculated dimensions based on user selection
   const { width, height } = getVolcengineDimensions(renderConfig.aspectRatio, renderConfig.resolution);
-
-  // Use the full Base64 Data URI string for the image
   const fullDataUri = base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`;
+  
+  // Volcengine often benefits from aspect ratio explicitly in prompt too
+  const finalPrompt = `${prompt} --ar ${renderConfig.aspectRatio.replace(':','-')}`;
 
-  // Payload structure based on standard Volcengine ARK ImageGenerations
   const payload: any = {
     model: volcConfig.endpointId,
-    prompt: prompt,
+    prompt: finalPrompt,
     image: fullDataUri,
     width: width,
     height: height,
-    // Strength: 0.1 (Similar) -> 0.9 (Different)
     strength: renderConfig.strength, 
-    scale: renderConfig.scale || 7.5,
-    watermark: false
+    watermark: false,
+    size: renderConfig.resolution.toLowerCase() 
   };
-
-  // Add optional parameters if they exist (though UI might hide them now)
-  if (renderConfig.seed && renderConfig.seed !== -1) {
-    payload.seed = renderConfig.seed;
-  }
-  
-  if (renderConfig.negativePrompt) {
-    payload.negative_prompt = renderConfig.negativePrompt;
-  }
 
   try {
     const response = await fetch(endpoint, {
@@ -116,16 +78,13 @@ const generateVolcengineImage = async (
       if (errorData.error?.message) {
         errorMsg = errorData.error.message;
       }
-      
       throw new Error(errorMsg);
     }
 
     const data = await response.json();
-    // Support both OpenAI standard 'data[0].url' and some Volcengine variations
     const imageUrl = data.data?.[0]?.url || data.data?.[0]?.image_url || data.data?.[0]?.binary_data;
 
     if (!imageUrl) {
-      console.error("Full Response:", data);
       throw new Error("火山引擎未返回有效的图片 URL。");
     }
 
@@ -148,20 +107,13 @@ export const generateEditedImage = async (
     strength: 0.65,
     seed: -1,
     scale: 7.5 
-  }
+  },
+  viewShiftMode: ViewShiftMode = 'CAMERA'
 ): Promise<string> => {
 
   const cleanBase64 = base64Image.split(',')[1] || base64Image;
 
-  // --- Volcengine Route (Independent Logic) ---
-  if (model === 'external-seedream') {
-    const finalPrompt = prompt.trim();
-    // Do not clean base64 for Volcengine wrapper, it handles it.
-    return generateVolcengineImage(finalPrompt, base64Image, volcConfig, renderConfig);
-  }
-
-  // --- Gemini Route ---
-  const ai = getClient();
+  // --- Prompt Construction (Shared Logic) ---
   let augmentedPrompt = "";
   
   switch (mode) {
@@ -174,12 +126,43 @@ export const generateEditedImage = async (
     case EditMode.CREATIVE:
       augmentedPrompt = `Creative re-imagining. ${prompt}. Artistic style, masterpiece quality, ${renderConfig.resolution}.`;
       break;
+    case EditMode.VIEW_SHIFT:
+      // Separate logic for English (Gemini) vs Chinese (Seedream)
+      if (model === 'external-seedream') {
+         // Chinese Logic for Seedream
+         if (viewShiftMode === 'CAMERA') {
+           augmentedPrompt = `新视角合成。摄像机运镜。请将摄像机移动到此角度：${prompt}。关键：主体保持静止，摄像机围绕主体旋转。背景透视随之改变。保持主体特征一致。`;
+         } else {
+           augmentedPrompt = `物体操控。主体旋转。请将主体自身旋转到此角度：${prompt}。关键：摄像机角度保持静止。主体原地旋转。背景保持相对静止。如果露出背面或侧面，请合理生成细节。`;
+         }
+      } else {
+         // English Logic for Gemini
+         if (viewShiftMode === 'CAMERA') {
+            augmentedPrompt = `Novel View Synthesis. Camera Orbit. Move the camera to this angle: ${prompt}. 
+            CRITICAL: The subject remains static. The camera orbits around the subject. Background perspective changes accordingly. 
+            Keep the subject's identity features consistent.`;
+          } else {
+            augmentedPrompt = `Object Manipulation. Subject Rotation. Rotate the subject itself to this angle: ${prompt}. 
+            CRITICAL: The camera angle remains static. The subject rotates in place. The background remains static relative to the frame.
+            Ensure the back/side of the object is rendered realistically if revealed.`;
+          }
+      }
+      break;
     default:
       augmentedPrompt = `Edit this image: ${prompt}.`;
   }
 
-  const geminiConfig: any = {};
+  // --- Engine Routing ---
+
+  // 1. Seedream / Volcengine Route
+  if (model === 'external-seedream') {
+    return generateVolcengineImage(augmentedPrompt, base64Image, volcConfig, renderConfig);
+  }
+
+  // 2. Gemini Route
+  const ai = getClient();
   
+  const geminiConfig: any = {};
   if (model === 'gemini-3-pro-image-preview') {
     geminiConfig.imageConfig = {
       imageSize: renderConfig.resolution,
@@ -207,7 +190,6 @@ export const generateEditedImage = async (
     });
 
     const parts = response.candidates?.[0]?.content?.parts;
-    
     if (parts) {
       for (const part of parts) {
         if (part.inlineData && part.inlineData.data) {
@@ -215,7 +197,6 @@ export const generateEditedImage = async (
         }
       }
     }
-
     throw new Error("AI 生成失败，未返回图片数据。");
   } catch (error) {
     console.error("Gemini API Error:", error);

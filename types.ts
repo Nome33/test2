@@ -2,8 +2,11 @@
 export enum EditMode {
   BACKGROUND = 'BACKGROUND',
   GENERAL = 'GENERAL', // General enhancement/modification
-  CREATIVE = 'CREATIVE' // Heavy style transfer
+  CREATIVE = 'CREATIVE', // Heavy style transfer
+  VIEW_SHIFT = 'VIEW_SHIFT' // New: Perspective/Rotation change
 }
+
+export type ViewShiftMode = 'CAMERA' | 'SUBJECT';
 
 export type EngineType = 'GEMINI' | 'SEEDREAM';
 
@@ -54,4 +57,9 @@ export interface HistoryItem {
   engine: EngineType;
   resolution: Resolution;
   aspectRatio: AspectRatio;
+}
+
+export interface RotationState {
+  x: number;
+  y: number;
 }
