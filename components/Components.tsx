@@ -5,6 +5,9 @@ import { Loader2, Settings, X, History, Rotate3D, RotateCcw } from 'lucide-react
 interface ButtonProps extends HTMLMotionProps<"button"> {
   variant?: 'primary' | 'secondary' | 'glass' | 'ghost';
   isLoading?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+  onClick?: React.MouseEventHandler<HTMLButtonElement>;
 }
 
 export const IOSButton: React.FC<ButtonProps> = ({ 
