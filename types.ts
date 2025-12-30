@@ -1,9 +1,9 @@
 
 export enum EditMode {
   BACKGROUND = 'BACKGROUND',
-  GENERAL = 'GENERAL', // General enhancement/modification
-  CREATIVE = 'CREATIVE', // Heavy style transfer
-  VIEW_SHIFT = 'VIEW_SHIFT' // New: Perspective/Rotation change
+  GENERAL = 'GENERAL', 
+  CREATIVE = 'CREATIVE', 
+  VIEW_SHIFT = 'VIEW_SHIFT' 
 }
 
 export type ViewShiftMode = 'CAMERA' | 'SUBJECT';
@@ -18,8 +18,7 @@ export type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
 export interface RenderConfig {
   resolution: Resolution;
   aspectRatio: AspectRatio;
-  strength: number; // 0.0 - 1.0, internal usage
-  // Advanced Volcengine Params
+  strength: number; 
   seed: number;
   scale: number;
   negativePrompt?: string;
