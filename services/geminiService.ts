@@ -1,6 +1,14 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { EditMode, AiModel, VolcengineConfig, RenderConfig, ViewShiftMode } from "../types";
+
+const getClient = (apiKeyOverride?: string) => {
+  // Prioritize user-provided key, then environment variable
+  const apiKey = apiKeyOverride || process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing. Please configure it in Settings.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 // Helper to calculate dimensions for Seedream/Volcengine
 const getVolcengineDimensions = (aspectRatio: string, resolution: string): { width: number, height: number } => {
@@ -101,7 +109,8 @@ export const generateEditedImage = async (
     seed: -1,
     scale: 7.5 
   },
-  viewShiftMode: ViewShiftMode = 'CAMERA'
+  viewShiftMode: ViewShiftMode = 'CAMERA',
+  geminiApiKey?: string
 ): Promise<string> => {
 
   const cleanBase64 = base64Image.split(',')[1] || base64Image;
@@ -122,11 +131,23 @@ export const generateEditedImage = async (
     case EditMode.VIEW_SHIFT:
       // Separate logic for English (Gemini) vs Chinese (Seedream)
       if (model === 'external-seedream') {
-         // Chinese Logic for Seedream - Simplified to respect the "将视角改为" prefix from App.tsx
-         augmentedPrompt = `${prompt}。关键：要求画面透视合理，保持主体特征一致，背景光影融合自然。`;
+         // Chinese Logic for Seedream
+         if (viewShiftMode === 'CAMERA') {
+           augmentedPrompt = `新视角合成。摄像机运镜。请将摄像机移动到此角度：${prompt}。关键：主体保持静止，摄像机围绕主体旋转。背景透视随之改变。保持主体特征一致。`;
+         } else {
+           augmentedPrompt = `物体操控。主体旋转。请将主体自身旋转到此角度：${prompt}。关键：摄像机角度保持静止。主体原地旋转。背景保持相对静止。如果露出背面或侧面，请合理生成细节。`;
+         }
       } else {
          // English Logic for Gemini
-         augmentedPrompt = `${prompt}. Novel View Synthesis logic: ensure subject identity features are consistent and background perspective changes accordingly.`;
+         if (viewShiftMode === 'CAMERA') {
+            augmentedPrompt = `Novel View Synthesis. Camera Orbit. Move the camera to this angle: ${prompt}. 
+            CRITICAL: The subject remains static. The camera orbits around the subject. Background perspective changes accordingly. 
+            Keep the subject's identity features consistent.`;
+          } else {
+            augmentedPrompt = `Object Manipulation. Subject Rotation. Rotate the subject itself to this angle: ${prompt}. 
+            CRITICAL: The camera angle remains static. The subject rotates in place. The background remains static relative to the frame.
+            Ensure the back/side of the object is rendered realistically if revealed.`;
+          }
       }
       break;
     default:
@@ -141,8 +162,7 @@ export const generateEditedImage = async (
   }
 
   // 2. Gemini Route
-  // Create a new instance right before use as per guidelines to ensure it uses the latest process.env.API_KEY.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getClient(geminiApiKey);
   
   const geminiConfig: any = {};
   if (model === 'gemini-3-pro-image-preview') {
@@ -183,9 +203,7 @@ export const generateEditedImage = async (
   } catch (error: any) {
     console.error("Gemini API Error:", error);
     let msg = error.message;
-    if (msg.includes('API key not valid') || msg.includes('Requested entity was not found')) {
-      msg = 'Gemini API Key 无效或未找到。如果是 Gemini 3 模型，请确保您已在对话框中选择了有效的 API Key。';
-    }
+    if (msg.includes('API key not valid')) msg = 'Gemini API Key 无效，请在设置中检查。';
     throw new Error(msg);
   }
 };

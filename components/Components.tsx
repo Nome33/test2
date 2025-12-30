@@ -1,8 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, HTMLMotionProps, AnimatePresence } from 'framer-motion';
-import { Loader2, Settings, X, History, Rotate3d, RotateCcw, Image as ImageIcon, Camera, User, Box } from 'lucide-react';
-import { ViewShiftMode } from '../types';
+import { Loader2, Settings, X, History, Rotate3D, RotateCcw } from 'lucide-react';
 
 interface ButtonProps extends HTMLMotionProps<"button"> {
   variant?: 'primary' | 'secondary' | 'glass' | 'ghost';
@@ -45,10 +44,9 @@ export const IOSInput: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { 
       {label && <label className="text-[12px] font-bold text-[#86868B] uppercase tracking-wider opacity-80">{label}</label>}
       {subLabel && <span className="text-[11px] text-[#86868B]">{subLabel}</span>}
     </div>
-    <textarea 
-      className={`glass-input w-full text-[#1D1D1F] px-4 py-3.5 rounded-2xl outline-none transition-all placeholder:text-[#86868B]/40 text-[16px] font-medium resize-none ${className}`}
-      rows={3}
-      {...(props as any)}
+    <input 
+      className={`glass-input w-full text-[#1D1D1F] px-4 py-3.5 rounded-2xl outline-none transition-all placeholder:text-[#86868B]/40 text-[16px] font-medium ${className}`}
+      {...props}
     />
   </div>
 );
@@ -76,7 +74,7 @@ export const SegmentedControl: React.FC<{
               isActive ? 'text-black' : 'text-[#86868B] hover:text-[#1D1D1F]'
             }`}
           >
-            {isActive && option.icon}
+            {option.icon}
             {option.label}
             {isActive && (
               <motion.div
@@ -92,86 +90,84 @@ export const SegmentedControl: React.FC<{
   );
 };
 
-/**
- * Static 3D Cube Component
- * Visual reference for subject orientation. Highlights active faces based on perspective.
- */
-const Cube3D: React.FC<{ rotation: { x: number; y: number }, activeFaces?: string[] }> = ({ rotation, activeFaces = [] }) => {
-  const size = 110;
-  const half = size / 2;
+export const CubeController: React.FC<{
+  rotation: { x: number; y: number };
+  onChange: (rot: { x: number; y: number }) => void;
+  onReset?: () => void;
+}> = ({ rotation, onChange, onReset }) => {
+  const isDragging = useRef(false);
+  const startPos = useRef({ x: 0, y: 0 });
+  const startRot = useRef({ x: 0, y: 0 });
 
-  const getFaceClass = (faceName: string) => {
-    const base = "absolute w-full h-full border flex flex-col items-center justify-center font-bold text-[9px] uppercase tracking-[0.1em] transition-all duration-500 ease-out";
-    const isActive = activeFaces.includes(faceName);
-    
-    if (faceName === 'front') {
-      return `${base} ${isActive ? 'bg-[#007AFF] border-white/60 text-white shadow-[0_0_30px_rgba(0,122,255,0.6)]' : 'bg-gradient-to-br from-[#007AFF] to-[#004C99] text-white/90 border-white/20 shadow-[inset_0_0_30px_rgba(0,0,0,0.3)]'}`;
-    }
-    
-    return `${base} ${isActive ? 'bg-[#1c1c1e] border-[#007AFF]/60 text-white shadow-[0_0_30px_rgba(0,122,255,0.4)]' : 'bg-[#1c1c1e] text-white/40 border-white/10 shadow-[inset_0_0_30px_rgba(0,0,0,0.3)]'}`;
+  const handleStart = (clientX: number, clientY: number) => {
+    isDragging.current = true;
+    startPos.current = { x: clientX, y: clientY };
+    startRot.current = { ...rotation };
   };
-  
+
+  const handleMove = (clientX: number, clientY: number) => {
+    if (!isDragging.current) return;
+    const deltaX = clientX - startPos.current.x;
+    const deltaY = clientY - startPos.current.y;
+    onChange({ 
+      x: startRot.current.x - deltaY * 0.5, 
+      y: startRot.current.y + deltaX * 0.5 
+    });
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+    const onMouseUp = () => isDragging.current = false;
+    const onTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    const onTouchEnd = () => isDragging.current = false;
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, []); 
+
+  const faceStyle = "absolute w-full h-full border border-white/20 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-sm flex items-center justify-center text-[10px] font-bold text-white/60 shadow-inner select-none";
+  const size = 120;
+
   return (
     <div 
-      style={{
-        width: size,
-        height: size,
-        transformStyle: 'preserve-3d',
-        transform: `perspective(1000px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
-        transition: 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)'
-      }}
-      className="relative pointer-events-none"
+      className="relative w-full h-[240px] bg-[#1a1a1a] rounded-[1.5rem] flex items-center justify-center overflow-hidden cursor-move shadow-inner border border-white/5"
+      onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
+      onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
     >
-      <div className={getFaceClass('front')} style={{ transform: `translateZ(${half}px)` }}>
-        <User className="w-8 h-8 mb-2 opacity-90" />
-        <span>正面</span>
+      <div className="absolute top-4 left-4 z-10 flex gap-2 pointer-events-none">
+        <div className="bg-white/10 px-2 py-1 rounded text-[10px] text-white/80">X: {Math.round(rotation.x)}°</div>
+        <div className="bg-white/10 px-2 py-1 rounded text-[10px] text-white/80">Y: {Math.round(rotation.y)}°</div>
       </div>
-      <div className={getFaceClass('back')} style={{ transform: `rotateY(180deg) translateZ(${half}px)` }}>
-        <span>背面</span>
-      </div>
-      <div className={getFaceClass('right')} style={{ transform: `rotateY(90deg) translateZ(${half}px)` }}>
-        <span>右侧</span>
-      </div>
-      <div className={getFaceClass('left')} style={{ transform: `rotateY(-90deg) translateZ(${half}px)` }}>
-        <span>左侧</span>
-      </div>
-      <div className={getFaceClass('top')} style={{ transform: `rotateX(90deg) translateZ(${half}px)` }}>
-        <span>顶面</span>
-      </div>
-      <div className={getFaceClass('bottom')} style={{ transform: `rotateX(-90deg) translateZ(${half}px)` }}>
-        <span>底面</span>
-      </div>
-    </div>
-  );
-};
-
-export const CubeViewer: React.FC<{
-  rotation: { x: number; y: number };
-  activeFaces?: string[];
-}> = ({ rotation, activeFaces = [] }) => {
-  return (
-    <div className="relative w-full h-[320px] bg-[#050505] rounded-[2.5rem] flex items-center justify-center overflow-hidden border border-white/5 shadow-2xl">
-      <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-      
-      <div className="absolute top-6 left-7 z-10 flex gap-4 pointer-events-none">
-        <div className="flex flex-col">
-          <span className="text-[9px] text-white/20 uppercase font-black tracking-widest">PITCH</span>
-          <span className="text-[14px] text-[#007AFF] font-mono font-bold">{rotation.x.toFixed(0)}°</span>
-        </div>
-        <div className="flex flex-col border-l border-white/10 pl-4">
-          <span className="text-[9px] text-white/20 uppercase font-black tracking-widest">YAW</span>
-          <span className="text-[14px] text-[#007AFF] font-mono font-bold">{rotation.y.toFixed(0)}°</span>
-        </div>
-      </div>
-
-      <div className="relative flex items-center justify-center" style={{ transformStyle: 'preserve-3d' }}>
-        <Cube3D rotation={rotation} activeFaces={activeFaces} />
-      </div>
-
-      <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-2 pointer-events-none opacity-40">
-        <div className="flex items-center gap-3 text-[9px] font-black text-white uppercase tracking-[0.4em]">
-           视角预览 (PREVIEW)
-        </div>
+      {onReset && (
+        <button onClick={(e) => { e.stopPropagation(); onReset(); }} className="absolute top-4 right-4 z-20 bg-white/10 p-2 rounded-full text-white/80 hover:bg-white/20 transition-colors">
+          <RotateCcw className="w-4 h-4" />
+        </button>
+      )}
+      <div 
+        style={{
+          width: size,
+          height: size,
+          transformStyle: 'preserve-3d',
+          transform: `perspective(800px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
+          transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
+        }}
+        className="relative"
+      >
+        <div className={faceStyle} style={{ transform: `translateZ(${size/2}px)` }}>FRONT</div>
+        <div className={faceStyle} style={{ transform: `rotateY(180deg) translateZ(${size/2}px)` }}>BACK</div>
+        <div className={faceStyle} style={{ transform: `rotateY(90deg) translateZ(${size/2}px)`, background: 'rgba(0,122,255,0.1)' }}>RIGHT</div>
+        <div className={faceStyle} style={{ transform: `rotateY(-90deg) translateZ(${size/2}px)`, background: 'rgba(255,59,48,0.1)' }}>LEFT</div>
+        <div className={faceStyle} style={{ transform: `rotateX(90deg) translateZ(${size/2}px)`, background: 'rgba(52,199,89,0.1)' }}>TOP</div>
+        <div className={faceStyle} style={{ transform: `rotateX(-90deg) translateZ(${size/2}px)` }}>BOTTOM</div>
       </div>
     </div>
   );
