@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, HTMLMotionProps, AnimatePresence } from 'framer-motion';
-import { Loader2, Settings, X, History, Rotate3D, RotateCcw } from 'lucide-react';
+import { Loader2, Settings, X, History, Rotate3d, RefreshCcw } from 'lucide-react';
 
 interface ButtonProps extends HTMLMotionProps<"button"> {
   variant?: 'primary' | 'secondary' | 'glass' | 'ghost';
@@ -90,84 +90,39 @@ export const SegmentedControl: React.FC<{
   );
 };
 
-export const CubeController: React.FC<{
+export const CubeViewer: React.FC<{
   rotation: { x: number; y: number };
-  onChange: (rot: { x: number; y: number }) => void;
-  onReset?: () => void;
-}> = ({ rotation, onChange, onReset }) => {
-  const isDragging = useRef(false);
-  const startPos = useRef({ x: 0, y: 0 });
-  const startRot = useRef({ x: 0, y: 0 });
-
-  const handleStart = (clientX: number, clientY: number) => {
-    isDragging.current = true;
-    startPos.current = { x: clientX, y: clientY };
-    startRot.current = { ...rotation };
-  };
-
-  const handleMove = (clientX: number, clientY: number) => {
-    if (!isDragging.current) return;
-    const deltaX = clientX - startPos.current.x;
-    const deltaY = clientY - startPos.current.y;
-    onChange({ 
-      x: startRot.current.x - deltaY * 0.5, 
-      y: startRot.current.y + deltaX * 0.5 
-    });
-  };
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
-    const onMouseUp = () => isDragging.current = false;
-    const onTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX, e.touches[0].clientY);
-    const onTouchEnd = () => isDragging.current = false;
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd);
-
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-    };
-  }, []); 
-
-  const faceStyle = "absolute w-full h-full border border-white/20 bg-gradient-to-br from-white/10 to-transparent backdrop-blur-sm flex items-center justify-center text-[10px] font-bold text-white/60 shadow-inner select-none";
+  activeFaces?: string[];
+}> = ({ rotation, activeFaces = [] }) => {
   const size = 120;
+  const faceStyle = "absolute w-full h-full border border-white/20 flex items-center justify-center text-[10px] font-bold text-white/40 shadow-inner select-none transition-all duration-500";
+  
+  const getFaceBg = (name: string) => {
+    if (activeFaces.includes(name)) return 'rgba(0,122,255,0.4)';
+    return 'rgba(255,255,255,0.05)';
+  };
 
   return (
-    <div 
-      className="relative w-full h-[240px] bg-[#1a1a1a] rounded-[1.5rem] flex items-center justify-center overflow-hidden cursor-move shadow-inner border border-white/5"
-      onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
-      onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
-    >
+    <div className="relative w-full h-[220px] bg-[#1a1a1a] rounded-[1.5rem] flex items-center justify-center overflow-hidden shadow-inner border border-white/5">
       <div className="absolute top-4 left-4 z-10 flex gap-2 pointer-events-none">
-        <div className="bg-white/10 px-2 py-1 rounded text-[10px] text-white/80">X: {Math.round(rotation.x)}°</div>
-        <div className="bg-white/10 px-2 py-1 rounded text-[10px] text-white/80">Y: {Math.round(rotation.y)}°</div>
+        <div className="bg-white/10 px-2 py-1 rounded text-[10px] text-white/60 font-mono">RENDER PREVIEW MODE</div>
       </div>
-      {onReset && (
-        <button onClick={(e) => { e.stopPropagation(); onReset(); }} className="absolute top-4 right-4 z-20 bg-white/10 p-2 rounded-full text-white/80 hover:bg-white/20 transition-colors">
-          <RotateCcw className="w-4 h-4" />
-        </button>
-      )}
       <div 
         style={{
           width: size,
           height: size,
           transformStyle: 'preserve-3d',
           transform: `perspective(800px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
-          transition: isDragging.current ? 'none' : 'transform 0.1s ease-out'
+          transition: 'transform 0.8s cubic-bezier(0.16, 1, 0.3, 1)'
         }}
         className="relative"
       >
-        <div className={faceStyle} style={{ transform: `translateZ(${size/2}px)` }}>FRONT</div>
-        <div className={faceStyle} style={{ transform: `rotateY(180deg) translateZ(${size/2}px)` }}>BACK</div>
-        <div className={faceStyle} style={{ transform: `rotateY(90deg) translateZ(${size/2}px)`, background: 'rgba(0,122,255,0.1)' }}>RIGHT</div>
-        <div className={faceStyle} style={{ transform: `rotateY(-90deg) translateZ(${size/2}px)`, background: 'rgba(255,59,48,0.1)' }}>LEFT</div>
-        <div className={faceStyle} style={{ transform: `rotateX(90deg) translateZ(${size/2}px)`, background: 'rgba(52,199,89,0.1)' }}>TOP</div>
-        <div className={faceStyle} style={{ transform: `rotateX(-90deg) translateZ(${size/2}px)` }}>BOTTOM</div>
+        <div className={faceStyle} style={{ transform: `translateZ(${size/2}px)`, background: getFaceBg('front') }}>FRONT</div>
+        <div className={faceStyle} style={{ transform: `rotateY(180deg) translateZ(${size/2}px)`, background: getFaceBg('back') }}>BACK</div>
+        <div className={faceStyle} style={{ transform: `rotateY(90deg) translateZ(${size/2}px)`, background: getFaceBg('right') }}>RIGHT</div>
+        <div className={faceStyle} style={{ transform: `rotateY(-90deg) translateZ(${size/2}px)`, background: getFaceBg('left') }}>LEFT</div>
+        <div className={faceStyle} style={{ transform: `rotateX(90deg) translateZ(${size/2}px)`, background: getFaceBg('top') }}>TOP</div>
+        <div className={faceStyle} style={{ transform: `rotateX(-90deg) translateZ(${size/2}px)`, background: getFaceBg('bottom') }}>BOTTOM</div>
       </div>
     </div>
   );
